@@ -1,0 +1,69 @@
+name: 1-actions-ci-cd-aks
+on:
+  push:
+    branches: [ master ]
+#   paths: .github/workflows/1-actions-ci-cd-aks.yml
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build-deploy-k8s:
+    runs-on: ubuntu-latest
+    env:
+      DOCKER_REPOSITORY: naveenguptaus # name of Docker Hub ID
+      IMAGE_NAME: testgithub
+      IMAGE_TAG: ${{ github.run_number }} # $GITHUB_RUN_NUMBER
+      NAMESPACE: myapp
+    steps:
+
+    - name: Git Checkout
+      uses: actions/checkout@v2
+  
+    - name: Build Docker Image
+      working-directory: ./kanban-app
+      run:
+        docker build . --tag $DOCKER_REPOSITORY/$IMAGE_NAME:$GITHUB_RUN_NUMBER #--no-cache
+ 
+    - name: Login to Docker Hub
+      working-directory: ./kanban-app
+      run: |
+        echo "${{ secrets.DOCKER_REPOSITORY_PASSWORD }}" | docker login -u $DOCKER_REPOSITORY --password-stdin
+  
+    - name: Push Image to Docker Hub
+      working-directory: ./kanban-app
+      run:
+        docker push $DOCKER_REPOSITORY/$IMAGE_NAME:$GITHUB_RUN_NUMBER 
+
+    - uses: azure/setup-kubectl@v2.0
+
+    - uses: Azure/k8s-set-context@v2
+      with:
+         method: kubeconfig
+         kubeconfig: ${{ secrets.KUBE_CONFIG }}
+ 
+#   - uses: tale/kubectl-action@v1
+#     with:
+#       base64-kube-config: ${{ secrets.KUBE_CONFIG }}
+#    - name: change image
+#      run: kubectl set image deployment.apps/epart container-0=$DOCKER_REPOSITORY/$IMAGE_NAME:$GITHUB_RUN_NUMBER -n $NAMESPACE
+
+#    - uses: Azure/k8s-create-secret@v1.1
+#      with:
+#         container-registry-url: docker.io
+#         container-registry-username: ${{ secrets.DOCKER_REPOSITORY_USERNAME }}
+#         container-registry-password: ${{ secrets.DOCKER_REPOSITORY_PASSWORD }}
+#         secret-name: k8s-secret
+
+    - uses: Azure/k8s-deploy@v3.1
+      with:
+         namespace: 'naveen'
+         action: deploy
+         manifests: |
+            manifests/deployment.yaml
+#           manifests/service.yml
+         images: |
+            ${{env.DOCKER_REPOSITORY}}/${{env.IMAGE_NAME}}:${{env.IMAGE_TAG}}
+# secret to store docker private image            
+         imagepullsecrets: |
+            regcred
